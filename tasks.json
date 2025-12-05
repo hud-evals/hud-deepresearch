@@ -9,7 +9,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -35,7 +35,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -61,7 +61,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -87,7 +87,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -113,7 +113,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -139,7 +139,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -165,7 +165,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -191,7 +191,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -217,7 +217,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -243,7 +243,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -269,7 +269,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -295,7 +295,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -321,7 +321,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
@@ -347,7 +347,7 @@
           "run",
           "--rm",
           "-i",
-          "deepresearch:0.1.7"
+          "hud-deepresearch:0.1.0"
         ]
       }
     },
