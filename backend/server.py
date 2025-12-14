@@ -14,6 +14,9 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from dotenv import load_dotenv
+
+load_dotenv()
 
 T = TypeVar("T")
 
@@ -141,6 +144,16 @@ async def _is_port_open(port: int) -> bool:
 async def setup() -> Dict[str, Any]:
     state.reset()
     return {"ok": True}
+
+
+@app.get("/state")
+async def get_state() -> Dict[str, Any]:
+    """Get current environment state."""
+    return {
+        "search_count": state.search_count,
+        "fetch_count": state.fetch_count,
+        "submitted_answer": state.submitted_answer,
+    }
 
 
 async def _execute_search(query: str, exa_api_key: str, max_results: int = 1) -> Dict[str, Any]:

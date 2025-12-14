@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install git for dependency installation
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Copy and install dependencies
+COPY pyproject.toml ./
+COPY backend/pyproject.toml ./backend/
+RUN pip install --no-cache-dir . ./backend
+
+# Copy source code
+COPY env.py ./
+COPY backend/ ./backend/
+
+ENV ENV_SERVER_URL=http://localhost:8000
+ENV PYTHONPATH=/app
+
+# Start backend in background, then run environment with stdio
+CMD ["sh", "-c", "uvicorn backend.server:app --host 0.0.0.0 --port 8000 --log-level warning >&2 & sleep 0.5 && hud dev env:env --stdio"]

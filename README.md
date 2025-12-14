@@ -1,165 +1,147 @@
 # Deep Research Environment
 
-Web research environment powered by Exa API for searching and fetching content.
-See [docs](https://docs.hud.so/build-environments) for the complete environment design workflow.
+A web research environment using Exa for search and content extraction.
 
-## Architecture
+## 1. Deploy to Platform
 
-**`environment/`** - Manages Exa API integration and state
-- Holds the Exa API key server-side
-- Exposes HTTP endpoints `/search`, `/fetch`, `/answer`, `/evaluate` for research workflows
-- Implements exponential backoff for rate limiting
+If you haven't already, connect this repo to hud.ai:
 
-**`server/`** - Wraps data in MCP tools
-- Provides `search()`, `fetch()`, `answer()`, `evaluate()` tools for agents
-- Agents and tasks interact only with these tools
+1. Push to GitHub
+2. Go to [hud.ai](https://hud.ai) → **New** → **Environment**
+3. Connect your GitHub repo
+4. Your environment builds automatically on each push
 
-**Why separate?** Edit tools for the agent or tasks without restarting the environment backend.
+Once deployed, your environment is accessible by its slug (e.g., `my-org/deepresearch`).
 
-## Tools
+**Required Environment Variable:** Set `EXA_API_KEY` in your environment settings.
 
-- **`search(query: str)`** - Search the web using Exa API, returns list of results with titles and URLs
-- **`fetch(url: str)`** - Fetch full content from a URL, returns summary, highlights, and text
-- **`answer(final_answer: str)`** - Submit the final research answer
-- **`evaluate(expected_answer: str)`** - Evaluate submitted answer against expected result
+## 2. Define Tools and Scenarios
 
-## Setup
+Tools provide web research capabilities. Scenarios define evaluation flows.
 
-### Requirements
-- Exa API key (get one at [exa.ai](https://exa.ai))
+```python
+from hud import Environment
 
-### Environment Variables
-```bash
-export EXA_API_KEY="your_exa_api_key_here"
+env = Environment(name="deepresearch")
+
+@env.tool()
+async def search(query: str) -> list[dict[str, str]]:
+    """Search the web using Exa."""
+    resp = await http_client.post("/search", json={"query": query})
+    return resp.json()
+
+@env.tool()
+async def fetch(url: str) -> str:
+    """Fetch and extract content from a URL."""
+    resp = await http_client.post("/fetch", json={"url": url})
+    return resp.json().get("content", "")
+
+@env.tool()
+async def answer(final_answer: str) -> str:
+    """Submit your final answer."""
+    await http_client.post("/answer", json={"final_answer": final_answer})
+    return f"Answer submitted: {final_answer}"
+
+@env.scenario("research")
+async def research(question: str, answer_includes: str | list[str]):
+    await http_client.post("/setup")                    # Setup
+    _ = yield f"{question}\n\nUse search and fetch..."  # Prompt
+    # Evaluate: check if any answer_includes is in the submitted answer
+    yield 1.0 if found else 0.0                         # Reward
+
+@env.scenario("verify-claim")
+async def verify_claim(claim: str, expected_verdict: str):
+    await http_client.post("/setup")                    # Setup
+    _ = yield f"Verify: {claim}"                        # Prompt
+    yield 1.0 if expected_verdict in answer else 0.0    # Reward
 ```
 
-## Development
+## 3. Create Tasks from Scenarios
 
-```bash
-# Terminal 1 - Environment backend
-cd environment
-export EXA_API_KEY="your_key"
-uv run uvicorn server:app --reload
+Tasks are scenario instances with specific arguments.
 
-# Terminal 2 - MCP server
-cd server
-uv run hud dev
+**In Code:**
+```python
+tasks = [
+    env("research", question="Who won the Nobel Prize in Physics 2023?", answer_includes="Agostini"),
+    env("verify-claim", claim="Water boils at 100°C at sea level.", expected_verdict="true"),
+]
 ```
 
-The environment includes exponential backoff for rate limiting, so API calls will automatically retry on 429 errors.
-
-In general, we recommend starting work on the environment backend first, then developing the MCP server to expose the right things to the agent.
-
-For complex environments that require many dependencies, we recommend running `hud dev` in the environment root:
-```bash
-cd ..
-export EXA_API_KEY="your_key"
-hud dev
-```
-
-## Tasks & Evaluation
-
-```bash
-# Build first in the global folder with the Dockerfile (creates deepresearch:0.1.0)
-hud build
-```
-
-Your `tasks.json` uses `docker run` to launch the environment:
-
+**From JSON:**
 ```json
-{
-  "prompt": "Research and answer: What is the capital of France?",
-  "mcp_config": {
-    "local": {
-      "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "EXA_API_KEY", "deepresearch:0.1.0"]
-    }
-  },
-  "evaluator": {
-    "tool_name": "evaluate",
-    "tool_params": {
-      "expected_answer": "Paris"
-    }
-  }
-}
+[
+  {"env": {"name": "my-org/deepresearch"}, "scenario": "research", "args": {"question": "...", "answer_includes": "..."}},
+  {"env": {"name": "my-org/deepresearch"}, "scenario": "verify-claim", "args": {"claim": "...", "expected_verdict": "true"}}
+]
 ```
 
-**Note:** The `-e EXA_API_KEY` flag passes your local API key to the container.
-
-**Commands:**
-```bash
-# Build first
-hud build
-
-# Test task locally
-export EXA_API_KEY="your_key"
-hud eval tasks.json
-
-# Push environment for remote running
-hud push
-
-# Production RL training
-hud rl tasks.json  # Auto-converts docker→remote, builds & pushes if needed
-```
-
-## Publishing Your Environment
-
-Once your environment is ready, you can share it with the community:
-
-### 1. Push to Registry
-```bash
-# Build and push your environment (requires docker hub login and hud api key)
-hud build
-hud push
-```
-
-### 2. Create a Dataset
-
-Create a dataset on HuggingFace with your tasks:
-
-**Option A: Upload manually**
-1. Upload your `tasks.json` to HuggingFace
-2. Make sure it's **public** to appear on leaderboards
-
-**Option B: Use the SDK**
+**On Platform:**
+After deploying, create tasks from your scenarios on hud.ai. Access them by slug:
 ```python
-from hud.datasets import save_tasks
-import json
-
-# Load your tasks
-with open("tasks.json") as f:
-    tasks = json.load(f)
-
-# Push to HuggingFace
-save_tasks(tasks, repo_id="your-org/your-dataset")
+from hud.datasets import load_tasks
+tasks = load_tasks("my-org/deepresearch-tasks")
 ```
 
-### 3. Run and Track Performance
+## 4. Run Evaluations
+
+Run tasks and see results on hud.ai. You have three options:
+
+**On Platform:**
+Run evaluations at scale directly on [hud.ai](https://hud.ai) with parallel execution and automatic tracing.
+
+**CLI:**
+```bash
+hud eval ./remote_tasks.json --model gpt-4o --remote  # https://hud.ai/models
+hud eval my-org/deepresearch --model gpt-4o --remote --group 5
+```
+
+**Python:**
+```python
+import hud
+from hud.agents import OpenAIChatAgent  # See all models: https://hud.ai/models
+
+tasks = [
+    env("research", question="Who received the IEEE Frank Rosenblatt Award in 2010?", answer_includes="Michio Sugeno"),
+]
+
+async with hud.eval(tasks) as ctx:
+    agent = OpenAIChatAgent.create(model="gpt-4o")  # Uses inference.hud.ai
+    await agent.run(ctx)
+
+# Results are automatically traced to hud.ai
+```
+
+## Local Development
 
 ```bash
-# Run Claude on your benchmark
-hud eval "your-org/your-dataset" --agent claude
+# Set your Exa API key
+export EXA_API_KEY=your-key-here
 
-# View results at:
-# hud.so/leaderboards/your-org/your-dataset
+# Start the backend
+uvicorn backend.server:app --port 8000 --reload
+
+# Test locally
+python local_test.py
+
+# Test with remote tasks
+python remote_test.py
 ```
 
-**Note**: Only public HuggingFace datasets appear as leaderboards!
+## Structure
 
-📚 Learn more: [Creating Benchmarks](https://docs.hud.so/evaluate-agents/create-benchmarks) | [Leaderboards](https://docs.hud.so/evaluate-agents/leaderboards)
-
-## Example Research Workflow
-
-```python
-# Agent searches for information
-results = search("latest AI developments 2024")
-
-# Agent fetches detailed content from top result
-content = fetch(results[0]["url"])
-
-# Agent submits final answer
-answer("Based on research, AI developments in 2024 include...")
-
-# Evaluate answer
-result = evaluate(expected_answer="AI developments")
 ```
+hud-deepresearch/
+├── env.py                  # Environment + tools + scenarios
+├── backend/
+│   └── server.py           # FastAPI backend (Exa integration)
+├── local_test.py           # Local testing examples
+├── remote_test.py          # Platform integration examples
+├── remote_tasks.json       # Task definitions
+├── Dockerfile.hud
+└── pyproject.toml
+```
+
+## Documentation
+
+Full documentation: [docs.hud.ai](https://docs.hud.ai)
