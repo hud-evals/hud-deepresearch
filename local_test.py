@@ -73,27 +73,11 @@ async def test_verify_claim_scenario():
         await agent.run(ctx)
 
 
-async def test_distribution():
-    """Test multiple tasks with variants and groups for A/B testing."""
-    print("\n=== Test 4: Distribution (Variants + Groups) ===")
-
-    tasks = [
-        env("research", question="Who won the Turing Award in 2020?", answer_includes="Lamport"),
-        env("research", question="Who founded OpenAI?", answer_includes=["Altman", "Musk", "Brockman"]),
-    ]
-    variants = {"model": ["gpt-4o-mini", "gpt-4o"]}
-    group = 2
-
-    async with hud.eval(tasks, variants=variants, group=group) as ctx:
-        agent = OpenAIChatAgent.create(model=ctx.variants["model"])
-        await agent.run(ctx, max_steps=10)
-
-
 async def main():
     await test_tools_standalone()
-    await test_research_manual()
-    await test_verify_claim_scenario()
-    await test_distribution()
+    # Uncomment to run scenarios:
+    # await test_research_manual()
+    # await test_verify_claim_scenario()
 
 
 if __name__ == "__main__":

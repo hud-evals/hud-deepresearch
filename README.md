@@ -142,6 +142,12 @@ python local_test.py
 python remote_test.py
 ```
 
+> ⚠️ **Local runs one task at a time.** For parallel execution with multiple tasks, push and run remotely:
+> ```bash
+> hud push
+> hud eval ./remote_tasks.json --model gpt-4o --remote --group 5
+> ```
+
 ## Structure
 
 ```
