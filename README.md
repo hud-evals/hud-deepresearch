@@ -17,7 +17,7 @@ Once deployed, your environment is accessible by its slug (e.g., `my-org/deepres
 
 ## 2. Define Tools and Scenarios
 
-Tools provide web research capabilities. Scenarios define evaluation flows.
+Tools are functions agents can call. Scenarios define the evaluation lifecycle.
 
 ```python
 from hud import Environment
@@ -110,6 +110,20 @@ async with hud.eval(tasks) as ctx:
     await agent.run(ctx)
 
 # Results are automatically traced to hud.ai
+```
+
+**With Variants (A/B Testing):**
+
+```python
+tasks = [
+    env("research", question="Who won the Nobel Prize in Physics 2023?", answer_includes="Agostini"),
+    env("verify-claim", claim="Water boils at 100°C at sea level.", expected_verdict="true"),
+]
+variants = {"model": ["gpt-4o-mini", "gpt-4o"]}
+
+async with hud.eval(tasks, variants=variants, group=2) as ctx:
+    agent = OpenAIChatAgent.create(model=ctx.variants["model"])
+    await agent.run(ctx)
 ```
 
 ## Local Development
