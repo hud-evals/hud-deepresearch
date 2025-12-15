@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "DeepResearch HUD environment with HTTP backend (EXA on server)"
 requires-python = ">=3.11"
 dependencies = [
-"hud-python @ git+https://github.com/hud-evals/hud-python@0b6557d18201018f0500af7163f032d9ed2459c7",
+"hud-python @ git+https://github.com/hud-evals/hud-python@1c718d09b605ded5f7a4805cda05e1aee654512b",
 "fastapi>=0.104.1", "uvicorn[standard]>=0.24.0", "httpx>=0.24.0",]
 
 [build-system]
