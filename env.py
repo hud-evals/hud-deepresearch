@@ -83,15 +83,16 @@ Use the search and fetch tools to find the answer. When you have found the answe
 
 Return just the answer, no other text."""
     
-    _ = yield prompt
+    response = yield prompt
     
     # Evaluate: check if answer includes required strings
+    # Priority: submitted answer via tool, fallback to yield response
     resp = await http_client.get("/state")
     state = resp.json()
-    submitted = state.get("submitted_answer", "")
+    submitted = state.get("submitted_answer", "") or response or ""
     
     if not submitted:
-        logger.info("No answer submitted")
+        logger.info("No answer submitted and no response from agent")
         yield 0.0
         return
     
@@ -136,15 +137,16 @@ Use the search and fetch tools to find evidence. When you have determined whethe
 
 Your answer should be one of: "true", "false", or "partially true" followed by a brief explanation."""
     
-    _ = yield prompt
+    response = yield prompt
     
     # Evaluate: check if verdict matches
+    # Priority: submitted answer via tool, fallback to yield response
     resp = await http_client.get("/state")
     state = resp.json()
-    submitted = state.get("submitted_answer", "")
+    submitted = state.get("submitted_answer", "") or response or ""
     
     if not submitted:
-        logger.info("No answer submitted")
+        logger.info("No answer submitted and no response from agent")
         yield 0.0
         return
     
