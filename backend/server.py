@@ -28,21 +28,21 @@ logger = logging.getLogger(__name__)
 async def call_with_exponential_backoff(
     func: Callable[..., Awaitable[T]],
     *args: Any,
-    max_retries: int = 5,
-    initial_delay: float = 1.0,
-    max_delay: float = 60.0,
+    max_retries: int = 4,
+    initial_delay: float = 2.0,
+    max_delay: float = 55.0,
     exponential_base: float = 2.0,
     **kwargs: Any,
 ) -> T:
     """
-    Call an async function with exponential backoff on rate limit errors.
+    Call an async function with exponential backoff on rate limit or timeout errors.
 
     Args:
         func: The async function to call
         *args: Positional arguments for the function
-        max_retries: Maximum number of retry attempts (default: 5)
-        initial_delay: Initial delay in seconds (default: 1.0)
-        max_delay: Maximum delay in seconds (default: 60.0)
+        max_retries: Maximum number of retry attempts (default: 3)
+        initial_delay: Initial delay in seconds (default: 2.0)
+        max_delay: Maximum delay in seconds (default: 30.0)
         exponential_base: Base for exponential backoff (default: 2.0)
         **kwargs: Keyword arguments for the function
 
@@ -62,7 +62,6 @@ async def call_with_exponential_backoff(
             if e.response.status_code == 429:
                 last_exception = e
                 if attempt < max_retries:
-                    # Log the retry attempt
                     logger.warning(
                         "Rate limit hit (429), retrying in %s seconds... (attempt %s/%s)",
                         delay,
@@ -70,19 +69,28 @@ async def call_with_exponential_backoff(
                         max_retries,
                     )
                     await asyncio.sleep(delay)
-                    # Calculate next delay with exponential backoff
                     delay = min(delay * exponential_base, max_delay)
                 else:
-                    # All retries exhausted
                     raise
             else:
-                # Not a rate limit error, raise immediately
+                raise
+        except (httpx.TimeoutException, httpx.ReadTimeout) as e:
+            # Retry on timeout errors
+            last_exception = e
+            if attempt < max_retries:
+                logger.warning(
+                    "Request timed out, retrying in %s seconds... (attempt %s/%s)",
+                    delay,
+                    attempt + 1,
+                    max_retries,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * exponential_base, max_delay)
+            else:
                 raise
         except Exception:
-            # Not an HTTP error, raise immediately
             raise
 
-    # This should never be reached, but just in case
     if last_exception:
         raise last_exception
     raise RuntimeError("Unexpected error in exponential backoff")
@@ -159,7 +167,7 @@ async def get_state() -> Dict[str, Any]:
 async def _execute_search(query: str, exa_api_key: str, max_results: int = 1) -> Dict[str, Any]:
     """Execute the actual Exa search API call."""
     search_url = "https://api.exa.ai/search"
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             search_url,
             headers={"x-api-key": exa_api_key, "Content-Type": "application/json"},
@@ -209,11 +217,8 @@ async def search(req: SearchRequest) -> List[Dict[str, str]]:
                 }
             ]
 
-    except (
-        httpx.HTTPStatusError
-    ) as e:  # pragma: no cover - network errors are environment dependent
+    except httpx.HTTPStatusError as e:  # pragma: no cover
         status_code = e.response.status_code
-        # Try to get error detail from response body
         try:
             error_body = e.response.text
         except Exception:
@@ -222,9 +227,11 @@ async def search(req: SearchRequest) -> List[Dict[str, str]]:
         if status_code == 401:
             raise HTTPException(status_code=401, detail="Invalid EXA_API_KEY")
         if status_code == 429:
-            # This should be handled by exponential backoff, but if all retries fail
-            raise HTTPException(status_code=429, detail="Exa API rate limit exceeded after retries")
+            raise HTTPException(status_code=429, detail="Exa API rate limit exceeded after retries. Try again later.")
         raise HTTPException(status_code=502, detail=f"Exa API error {status_code}: {error_body[:500]}")
+    except (httpx.TimeoutException, httpx.ReadTimeout) as e:  # pragma: no cover
+        logger.error("Exa API timeout after retries: %s", e)
+        raise HTTPException(status_code=504, detail=f"Exa API request timed out after retries: {e}")
     except Exception as e:  # pragma: no cover
         logger.exception("Search failed unexpectedly")
         raise HTTPException(status_code=500, detail=f"Search failed: {type(e).__name__}: {e}")
@@ -236,7 +243,7 @@ async def search(req: SearchRequest) -> List[Dict[str, str]]:
 async def _execute_fetch(url: str, exa_api_key: str, max_length: int = 2500) -> Dict[str, Any]:
     """Execute the actual Exa contents API call."""
     contents_url = "https://api.exa.ai/contents"
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             contents_url,
             headers={"x-api-key": exa_api_key, "Content-Type": "application/json"},
@@ -304,7 +311,6 @@ async def fetch(req: FetchRequest) -> Dict[str, str]:
 
     except httpx.HTTPStatusError as e:  # pragma: no cover
         status_code = e.response.status_code
-        # Try to get error detail from response body
         try:
             error_body = e.response.text
         except Exception:
@@ -313,9 +319,11 @@ async def fetch(req: FetchRequest) -> Dict[str, str]:
         if status_code == 401:
             raise HTTPException(status_code=401, detail="Invalid EXA_API_KEY")
         if status_code == 429:
-            # This should be handled by exponential backoff, but if all retries fail
-            raise HTTPException(status_code=429, detail="Exa API rate limit exceeded after retries")
+            raise HTTPException(status_code=429, detail="Exa API rate limit exceeded after retries. Try again later.")
         raise HTTPException(status_code=502, detail=f"Exa API error {status_code}: {error_body[:500]}")
+    except (httpx.TimeoutException, httpx.ReadTimeout) as e:  # pragma: no cover
+        logger.error("Exa API timeout after retries: %s", e)
+        raise HTTPException(status_code=504, detail=f"Exa API request timed out after retries: {e}")
     except Exception as e:  # pragma: no cover
         logger.exception("Fetch failed unexpectedly")
         raise HTTPException(status_code=500, detail=f"Fetch failed: {type(e).__name__}: {e}")
@@ -365,3 +373,4 @@ if __name__ == "__main__":
         raise ValueError("EXA_API_KEY is not set")
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
