@@ -213,13 +213,20 @@ async def search(req: SearchRequest) -> List[Dict[str, str]]:
         httpx.HTTPStatusError
     ) as e:  # pragma: no cover - network errors are environment dependent
         status_code = e.response.status_code
+        # Try to get error detail from response body
+        try:
+            error_body = e.response.text
+        except Exception:
+            error_body = str(e)
+        logger.error("Exa API error %s: %s", status_code, error_body)
         if status_code == 401:
             raise HTTPException(status_code=401, detail="Invalid EXA_API_KEY")
         if status_code == 429:
             # This should be handled by exponential backoff, but if all retries fail
             raise HTTPException(status_code=429, detail="Exa API rate limit exceeded after retries")
-        raise HTTPException(status_code=502, detail=f"Exa API error: {status_code}")
+        raise HTTPException(status_code=502, detail=f"Exa API error {status_code}: {error_body[:500]}")
     except Exception as e:  # pragma: no cover
+        logger.exception("Search failed unexpectedly")
         raise HTTPException(status_code=500, detail=f"Search failed: {type(e).__name__}: {e}")
 
     state.search_count += 1
@@ -297,13 +304,20 @@ async def fetch(req: FetchRequest) -> Dict[str, str]:
 
     except httpx.HTTPStatusError as e:  # pragma: no cover
         status_code = e.response.status_code
+        # Try to get error detail from response body
+        try:
+            error_body = e.response.text
+        except Exception:
+            error_body = str(e)
+        logger.error("Exa API error %s: %s", status_code, error_body)
         if status_code == 401:
             raise HTTPException(status_code=401, detail="Invalid EXA_API_KEY")
         if status_code == 429:
             # This should be handled by exponential backoff, but if all retries fail
             raise HTTPException(status_code=429, detail="Exa API rate limit exceeded after retries")
-        raise HTTPException(status_code=502, detail=f"Exa API error: {status_code}")
+        raise HTTPException(status_code=502, detail=f"Exa API error {status_code}: {error_body[:500]}")
     except Exception as e:  # pragma: no cover
+        logger.exception("Fetch failed unexpectedly")
         raise HTTPException(status_code=500, detail=f"Fetch failed: {type(e).__name__}: {e}")
 
     state.fetch_count += 1
