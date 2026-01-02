@@ -359,7 +359,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.104.1" },
     { name = "httpx", specifier = ">=0.24.0" },
-    { name = "hud-python", git = "https://github.com/hud-evals/hud-python?rev=0b6557d18201018f0500af7163f032d9ed2459c7" },
+    { name = "hud-python", specifier = "==0.5.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
 ]
 
@@ -558,8 +558,8 @@ wheels = [
 
 [[package]]
 name = "hud-python"
-version = "0.4.74"
-source = { git = "https://github.com/hud-evals/hud-python?rev=0b6557d18201018f0500af7163f032d9ed2459c7#0b6557d18201018f0500af7163f032d9ed2459c7" }
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blessed" },
     { name = "fastmcp" },
@@ -576,6 +576,10 @@ dependencies = [
     { name = "toml" },
     { name = "typer" },
     { name = "watchfiles" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/37/fb273639fcd735c25c01061f60f0f312a0781bf2471b03870db33247b953/hud_python-0.5.0.tar.gz", hash = "sha256:9e1af0508109b6b361b1c59dfe8c6a590a572e513823b63f3824857955245561", size = 441158, upload-time = "2025-12-17T06:14:39.214Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/c5/4058426ebcaa0e49096f6d09a0d6c0a1ce7c7c5770a1d7b0a9889879df9c/hud_python-0.5.0-py3-none-any.whl", hash = "sha256:0b86a440b780fb331d0c26001935ebbbbaef5728419578cc49b6f11083581cf3", size = 594711, upload-time = "2025-12-17T06:14:40.477Z" },
 ]
 
 [[package]]

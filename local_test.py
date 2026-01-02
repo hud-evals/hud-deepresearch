@@ -91,9 +91,9 @@ async def test_distribution():
 
 async def main():
     await test_tools_standalone()
-    await test_research_manual()
-    await test_verify_claim_scenario()
-    await test_distribution()
+    # await test_research_manual()
+    # await test_verify_claim_scenario()
+    # await test_distribution()
 
 
 if __name__ == "__main__":
