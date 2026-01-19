@@ -65,7 +65,7 @@ async def answer(final_answer: str) -> str:
 
 
 @env.scenario("research")
-async def research(question: str, answer_includes: str | list[str]) -> Any:
+async def research(question: str, answer_includes: str | list[str] | None = None) -> Any:
     """Research a question and find the answer.
     
     Args:
@@ -117,7 +117,7 @@ Return just the answer, no other text."""
 
 
 @env.scenario("verify-claim")
-async def verify_claim(claim: str, expected_verdict: str) -> Any:
+async def verify_claim(claim: str, expected_verdict: str | None = None) -> Any:
     """Verify whether a claim is true or false.
     
     Args:
