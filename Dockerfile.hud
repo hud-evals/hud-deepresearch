@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir . ./backend
 # Copy source code
 COPY env.py ./
 COPY backend/ ./backend/
+COPY tests/ ./tests/
 
 ENV ENV_SERVER_URL=http://localhost:8000
 ENV PYTHONPATH=/app

@@ -7,6 +7,7 @@ This demonstrates:
 """
 import logging
 import os
+import subprocess
 import sys
 from typing import Any
 
@@ -57,6 +58,19 @@ async def answer(final_answer: str) -> str:
     """Submit your final answer. Call this when you have completed your research."""
     await http_client.post("/answer", json={"final_answer": final_answer})
     return f"Answer submitted: {final_answer}"
+
+
+@env.tool()
+async def _hud_validate() -> str:
+    """Run the test suite to validate the environment is working correctly."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
+        capture_output=True,
+        text=True,
+        cwd="/app",
+    )
+    output = result.stdout + result.stderr
+    return output
 
 
 # =============================================================================
