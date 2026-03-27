@@ -61,7 +61,7 @@ async def answer(final_answer: str) -> str:
 
 
 @env.tool()
-async def _hud_validate() -> str:
+async def hud_validate() -> str:
     """Run the test suite to validate the environment is working correctly."""
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
@@ -78,7 +78,7 @@ async def _hud_validate() -> str:
 # =============================================================================
 
 
-@env.scenario("research")
+@env.scenario("research", exclude_tools=["hud_validate"])
 async def research(question: str, answer_includes: str | list[str] | None = None) -> Any:
     """Research a question and find the answer.
     
@@ -130,7 +130,7 @@ Return just the answer, no other text."""
     yield reward
 
 
-@env.scenario("verify-claim")
+@env.scenario("verify-claim", exclude_tools=["hud_validate"])
 async def verify_claim(claim: str, expected_verdict: str | None = None) -> Any:
     """Verify whether a claim is true or false.
     
