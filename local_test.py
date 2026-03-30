@@ -1,99 +1,68 @@
 """Local test script for the deepresearch environment.
 
+Usage:
+    python local_test.py --list
+    python local_test.py --task research_ieee_2010
+    python local_test.py --task compare_renewable_nuclear --model gpt-4o
+    python local_test.py --task verify_eiffel_paris --max-steps 10
+
 Prerequisites:
-1. Set EXA_API_KEY environment variable
-2. Run the backend: uvicorn backend.server:app --port 8000
-3. Run this script: python local_test.py
+    1. Set EXA_API_KEY environment variable
+    2. Run the backend: uvicorn backend.server:app --port 8000
 """
+
+import argparse
 import asyncio
 
 import hud
 from hud.agents import OpenAIChatAgent
-from hud.settings import settings
-from openai import AsyncOpenAI
 
-from env import env
-
-# Use HUD inference gateway - see all models at https://hud.ai/models
-client = AsyncOpenAI(base_url="https://inference.hud.ai", api_key=settings.api_key)
+from tasks import ALL_TASKS
 
 
-async def test_tools_standalone():
-    """Test environment tools directly."""
-    print("=== Test 1: Standalone Tools ===")
+async def main() -> None:
+    available = sorted(ALL_TASKS)
 
-    async with env:
-        print(f"Tools: {[t.name for t in env.as_tools()]}")
-        
-        # Test search
-        results = await env.call_tool("search", query="IEEE Frank Rosenblatt Award 2010")
-        print(f"Search results: {results}")
-
-
-async def test_research_manual():
-    """Test research scenario with manual OpenAI calls."""
-    print("\n=== Test 2: Research (Manual Agent Loop) ===")
-
-    task = env("research", 
-        question="Who received the IEEE Frank Rosenblatt Award in 2010?",
-        answer_includes="Michio Sugeno"
+    parser = argparse.ArgumentParser(
+        description="Run deepresearch tasks locally with an agent."
     )
-
-    async with hud.eval(task) as ctx:
-        messages = [{"role": "user", "content": ctx.prompt}]
-
-        while True:
-            response = await client.chat.completions.create(
-                model="gpt-4o",  # https://hud.ai/models
-                messages=messages,
-                tools=ctx.as_openai_chat_tools(),
-            )
-            msg = response.choices[0].message
-
-            if not msg.tool_calls:
-                break
-
-            messages.append(msg)
-            for tc in msg.tool_calls:
-                result = await ctx.call_tool(tc)
-                messages.append(result)
-
-
-async def test_verify_claim_scenario():
-    """Test verify-claim scenario with agent."""
-    print("\n=== Test 3: Verify Claim Scenario ===")
-
-    task = env("verify-claim",
-        claim="The Eiffel Tower is located in London.",
-        expected_verdict="false"
+    parser.add_argument(
+        "--task",
+        default=available[0],
+        choices=available,
+        help="Task to run (default: %(default)s)",
     )
+    parser.add_argument(
+        "--model",
+        default="gpt-4o",
+        help="Model to use (default: %(default)s). See https://hud.ai/models",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=20,
+        help="Maximum agent steps (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all available tasks and exit",
+    )
+    args = parser.parse_args()
 
-    async with hud.eval(task) as ctx:
-        agent = OpenAIChatAgent.create(model="gpt-4o")  # https://hud.ai/models
-        await agent.run(ctx)
+    if args.list:
+        for name in available:
+            task = ALL_TASKS[name]
+            print(f"  {name:35s} scenario={task.scenario}")
+        return
 
+    task = ALL_TASKS[args.task]
+    print(f"=== {args.task} (scenario={task.scenario}, model={args.model}) ===")
 
-async def test_distribution():
-    """Test multiple tasks with variants and groups for A/B testing."""
-    print("\n=== Test 4: Distribution (Variants + Groups) ===")
-
-    tasks = [
-        env("research", question="Who won the Turing Award in 2020?", answer_includes="Lamport"),
-        env("research", question="Who founded OpenAI?", answer_includes=["Altman", "Musk", "Brockman"]),
-    ]
-    variants = {"model": ["gpt-4o-mini", "gpt-4o"]}
-    group = 2
-
-    async with hud.eval(tasks, variants=variants, group=group) as ctx:
-        agent = OpenAIChatAgent.create(model=ctx.variants["model"])
-        await agent.run(ctx, max_steps=10)
-
-
-async def main():
-    await test_tools_standalone()
-    # await test_research_manual()
-    # await test_verify_claim_scenario()
-    # await test_distribution()
+    async with hud.eval(task, name=args.task) as ctx:
+        agent = OpenAIChatAgent.create(model=args.model)
+        await agent.run(ctx, max_steps=args.max_steps)
+        print(f"Reward: {ctx.reward}")
 
 
 if __name__ == "__main__":

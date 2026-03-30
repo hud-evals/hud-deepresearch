@@ -1,9 +1,9 @@
-"""Remote test script - Working with tasks from JSON and the platform.
+"""Remote test script - Working with tasks and the platform.
 
 This demonstrates the full workflow for remote evaluations:
 
-1. Deploy your environment to hud.ai (New → Environment → Connect GitHub repo)
-2. Create tasks from your scenarios on the platform
+1. Deploy your environment to hud.ai (New -> Environment -> Connect GitHub repo)
+2. Tasks are defined in tasks.py using scenario.task()
 3. Run evaluations locally or at scale
 
 ## Option A: Run on Platform
@@ -12,84 +12,74 @@ Run evaluations at scale directly on hud.ai with parallel execution and automati
 
 ## Option B: CLI Evaluation
 
-Run evaluations locally with the HUD CLI:
-
-    # From local JSON file
-    hud eval ./remote_tasks.json --model gpt-4o --remote
-
-    # From platform dataset
-    hud eval my-org/deepresearch --model gpt-4o --remote --group 5
-
+    # Run all tasks
+    hud eval my-org/deepresearch --model gpt-4o --remote
 
 ## Option C: Python Script (this file)
 
-    # Test locally with JSON tasks
-    python remote_test.py
+    # Upload tasks to platform
+    python remote_test.py --upload my-org/deepresearch
 
+    # Run all tasks
+    python remote_test.py --platform my-org/deepresearch --model gpt-4o
 
-Run the backend first: uvicorn backend.server:app --port 8000
 """
+
+import argparse
 import asyncio
 
 import hud
-from hud.agents import OpenAIChatAgent  # See all models: https://hud.ai/models
-from hud.datasets import load_tasks, save_tasks
+from hud.agents import OpenAIChatAgent
+from hud.datasets import save_tasks, load_tasks
+from hud.eval.task import Task
 
-from env import env
+from tasks import ALL_TASKS
 
-
-async def test_from_json():
-    """Load tasks from JSON and run locally."""
-    print("=== Load from JSON ===")
-
-    tasks = load_tasks("remote_tasks.json")
-
-    # Bind to local environment and run
-    bound_tasks = [env(t.scenario, **t.args) for t in tasks]
-
-    async with hud.eval(bound_tasks) as ctx:
-        agent = OpenAIChatAgent.create(model="gpt-4o")  # https://hud.ai/models
-        await agent.run(ctx)
+ENV_NAME = "deepresearch"
 
 
-async def test_from_platform(slug: str = "my-org/deepresearch"):
-    """Load and run tasks from the HUD platform.
-    
-    After deploying your environment:
-    1. Go to hud.ai → Environments → Your Environment
-    2. Create tasks from your scenarios
-    3. Use the dataset slug here
-    """
-    print(f"=== Load from Platform: {slug} ===")
-
-    tasks = load_tasks(slug)
-
-    async with hud.eval(tasks) as ctx:
-        agent = OpenAIChatAgent.create(model="gpt-4o")  # https://hud.ai/models
-        await agent.run(ctx)
-
-
-async def upload_to_platform(slug: str = "my-org/deepresearch"):
-    """Upload local tasks to the platform.
-    
-    This creates a dataset on hud.ai that you can run at scale.
-    """
+async def upload_to_platform(slug: str) -> None:
+    """Upload tasks to the platform."""
     print(f"=== Upload to Platform: {slug} ===")
 
-    tasks = load_tasks("remote_tasks.json")
-    bound_tasks = [env(t.scenario, **t.args) for t in tasks]
+    remote_tasks = [
+        Task(
+            env={"name": ENV_NAME},
+            scenario=f"{ENV_NAME}:{task.scenario}",
+            args=task.args,
+            slug=task.slug,
+        )
+        for task in ALL_TASKS.values()
+    ]
+    save_tasks(slug, remote_tasks)
+    print(f"Saved {len(remote_tasks)} tasks -> hud eval {slug} --model gpt-4o --remote")
 
-    await save_tasks(slug, bound_tasks)
-    print(f"Saved {len(tasks)} tasks → hud eval {slug} --model gpt-4o --remote")
 
+async def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Remote task operations for deepresearch"
+    )
+    parser.add_argument(
+        "--upload",
+        metavar="SLUG",
+        help="Upload tasks to platform (e.g. my-org/deepresearch)",
+    )
+    parser.add_argument(
+        "--platform",
+        metavar="SLUG",
+        help="Load and run tasks from platform slug",
+    )
+    parser.add_argument("--model", default="gpt-4o", help="Model to use")
+    args = parser.parse_args()
 
-async def main():
-    # Run local JSON test by default
-    await test_from_json()
-
-    # Uncomment to test platform features:
-    # await upload_to_platform("my-org/deepresearch")
-    # await test_from_platform("my-org/deepresearch")
+    if args.upload:
+        await upload_to_platform(args.upload)
+    else:
+        print(f"=== Loading tasks from platform: {args.platform} ===")
+        tasks = load_tasks(args.platform)
+        async with hud.eval(tasks) as ctx:
+            agent = OpenAIChatAgent.create(model=args.model)
+            await agent.run(ctx)
 
 
 if __name__ == "__main__":

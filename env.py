@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 from hud import Environment
+from collections.abc import AsyncGenerator
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -65,7 +66,7 @@ async def answer(final_answer: str) -> str:
 
 
 @env.scenario("research")
-async def research(question: str, answer_includes: str | list[str] | None = None) -> Any:
+async def research(question: str, answer_includes: str | list[str] | None = None) -> AsyncGenerator[Any]:
     """Research a question and find the answer.
     
     Args:
@@ -106,7 +107,7 @@ Return just the answer, no other text."""
         candidates = answer_includes
     
     # Check if any of the candidate strings are present
-    found = any(candidate.lower() in submitted_lower for candidate in candidates)
+    found = any(candidate.lower() in submitted_lower for candidate in candidates or [])
     reward = 1.0 if found else 0.0
     
     logger.info(
@@ -117,7 +118,7 @@ Return just the answer, no other text."""
 
 
 @env.scenario("verify-claim")
-async def verify_claim(claim: str, expected_verdict: str | None = None) -> Any:
+async def verify_claim(claim: str, expected_verdict: str | None = None) -> AsyncGenerator[Any]:
     """Verify whether a claim is true or false.
     
     Args:
@@ -152,6 +153,12 @@ Your answer should be one of: "true", "false", or "partially true" followed by a
     
     # Normalize for comparison
     submitted_lower = submitted.strip().lower()
+
+    if expected_verdict is None:
+        logger.info("No expected verdict provided, defaulting to 0.0 reward")
+        yield 0.0
+        return
+    
     expected_lower = expected_verdict.strip().lower()
     
     # Check if expected verdict is in the answer
@@ -164,6 +171,57 @@ Your answer should be one of: "true", "false", or "partially true" followed by a
     )
     yield reward
 
+
+@env.scenario("multi-hop-research")
+async def multi_hop_research(
+    question: str,
+    answer_parts: list[str | list[str]] | None = None,
+) -> AsyncGenerator[Any]:
+    """Answer a question requiring chaining multiple research steps.
+    Partial credit is awarded for each correct part found.
+
+    Args:
+        question: A multi-part question requiring chained research
+        answer_parts: Each element is either a string or a list of acceptable alternatives.
+    """
+    await http_client.post("/setup")
+    logger.info("Multi-hop research scenario: %s", question)
+
+    prompt = f"""{question}
+
+This question requires multiple steps of research. Break it down, search for each piece of information, and combine your findings. Call the answer tool when you have the complete answer.
+
+Include ALL parts of the answer."""
+
+    response = yield prompt
+
+    resp = await http_client.get("/state")
+    state = resp.json()
+    submitted = state.get("submitted_answer", "") or response or ""
+
+    if not submitted:
+        yield 0.0
+        return
+
+    submitted_lower = submitted.strip().lower()
+
+    if not answer_parts:
+        yield 1.0
+        return
+
+    def _part_found(part: str | list[str]) -> bool:
+        candidates = [part] if isinstance(part, str) else part
+        return any(c.lower() in submitted_lower for c in candidates)
+
+    # Partial credit: fraction of answer_parts found
+    found_count = sum(1 for part in answer_parts if _part_found(part))
+    reward = found_count / len(answer_parts)
+
+    logger.info(
+        "Multi-hop result: found %d/%d parts, reward=%.2f, answer='%s'",
+        found_count, len(answer_parts), reward, submitted[:100],
+    )
+    yield round(reward, 4)
 
 # =============================================================================
 # LIFECYCLE
