@@ -13,7 +13,10 @@ If you haven't already, connect this repo to hud.ai:
 
 Once deployed, your environment is accessible by its slug (e.g., `my-org/deepresearch`).
 
-**Required Environment Variable:** Set `EXA_API_KEY` in your environment settings.
+**Required Build Argument:** Pass `EXA_API_KEY` when building:
+```bash
+hud build . --build-arg EXA_API_KEY=your-key-here
+```
 
 ## 2. Define Tools and Scenarios
 
@@ -126,6 +129,12 @@ python local_test.py
 
 # Test with remote tasks
 python remote_test.py
+```
+
+## Building
+
+```bash
+hud build . --build-arg EXA_API_KEY=your-key-here
 ```
 
 ## Structure
