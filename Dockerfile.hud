@@ -24,4 +24,4 @@ ENV PYTHONPATH=/app
 ENV EXA_API_KEY=$EXA_API_KEY
 
 # Start backend in background, then run environment with stdio
-CMD ["sh", "-c", "uvicorn backend.server:app --host 0.0.0.0 --port 8000 --log-level warning >&2 & sleep 0.5 && hud dev env:env --stdio"]
+CMD ["sh", "-c", "uvicorn backend.server:app --host 0.0.0.0 --port 8000 --log-level warning >&2 & sleep 0.5 && exec hud dev env:env --stdio"]
