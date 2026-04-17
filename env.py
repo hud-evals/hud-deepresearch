@@ -7,6 +7,7 @@ This demonstrates:
 """
 import logging
 import os
+import subprocess
 import sys
 from typing import Any
 
@@ -60,12 +61,27 @@ async def answer(final_answer: str) -> str:
     return f"Answer submitted: {final_answer}"
 
 
+@env.tool()
+async def hud_validate() -> str:
+    """Run the test suite to validate the environment is working correctly."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
+        capture_output=True,
+        text=True,
+        cwd="/app",
+    )
+    output = result.stdout + result.stderr
+    if result.returncode != 0:
+        raise RuntimeError(output or f"pytest exited with code {result.returncode}")
+    return output
+
+
 # =============================================================================
 # SCENARIOS
 # =============================================================================
 
 
-@env.scenario("research")
+@env.scenario("research", exclude_tools=["hud_validate"])
 async def research(question: str, answer_includes: str | list[str] | None = None) -> AsyncGenerator[Any]:
     """Research a question and find the answer.
     
@@ -117,7 +133,7 @@ Return just the answer, no other text."""
     yield reward
 
 
-@env.scenario("verify-claim")
+@env.scenario("verify-claim", exclude_tools=["hud_validate"])
 async def verify_claim(claim: str, expected_verdict: str | None = None) -> AsyncGenerator[Any]:
     """Verify whether a claim is true or false.
     

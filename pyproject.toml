@@ -5,7 +5,8 @@ description = "DeepResearch HUD environment with HTTP backend (EXA on server)"
 requires-python = ">=3.11"
 dependencies = [
 "hud-python>=0.5.12",
-"fastapi>=0.104.1", "uvicorn[standard]>=0.24.0", "httpx>=0.24.0",]
+"fastapi>=0.104.1", "uvicorn[standard]>=0.24.0", "httpx>=0.24.0",
+"pytest>=8.0.0", "python-dotenv>=1.0.0",]
 
 [build-system]
 requires = [ "hatchling",]
