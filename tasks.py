@@ -33,7 +33,7 @@ research_jerlov_2018.slug = "research-jerlov-2018"
 
 # Hard: multiple acceptable answer forms, needs disambiguation
 research_cambridge_college = research.task(
-    question="What's the name of the women's liberal arts college in Cambridge, Massachusetts?",
+    question="What's the name of the former women's liberal arts college in Cambridge, Massachusetts founded in 1879?",
     answer_includes=["Radcliffe College", "Radcliffe"],
 )
 research_cambridge_college.slug = "research-cambridge-college"
@@ -58,7 +58,7 @@ verify_python_1995.slug = "verify-python-1995"
 
 # Hard: requires nuanced research about history of geodetic surveys
 verify_everest_tallest = verify_claim.task(
-    claim="Mount Everest has always been recognized as the tallest mountain on Earth since its height was first measured.",
+    claim="Mount Everest was immediately recognized as the tallest mountain on Earth when its height was first measured.",
     expected_verdict="false",
 )
 verify_everest_tallest.slug = "verify-everest-tallest"
@@ -76,12 +76,14 @@ multihop_marconi_advisor.slug = "multihop-marconi-advisor"
 
 # Medium: three-step chain, with disambiguation
 multihop_voyager_crs = multi_hop_research.task(
-    question="Which institution built the Cosmic Ray Subsystem instrument aboard Voyager 1, who was the principal investigator of that instrument at launch, and at which university did that person earn their PhD?",
+    question="Which institution built the Cosmic Ray Subsystem instrument aboard Voyager 1, who was the first principal investigator of that instrument at launch, and at which university did that person earn their PhD?",
     answer_parts=[
-        ["Caltech", "California Institute of Technology", "JPL", "Jet Propulsion Laboratory", "NASA"],
-        ["Edward Stone", "Edward C. Stone", "Ed Stone"],
-        ["University of Chicago", "UChicago"],
-    ],
+        ["Caltech", "California Institute of Technology", 
+        "Goddard Space Flight Center", "GSFC"],
+        ["Rochus Vogt", "Rochus E. Vogt", "Rochus Eugen Vogt", 
+        "Robbie Vogt", "R.E. Vogt"],
+        ["University of Chicago", "UChicago", "Chicago"],
+    ]
 )
 multihop_voyager_crs.slug = "multihop-voyager-crs"
 
