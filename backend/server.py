@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import socket
+from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 
 import httpx
@@ -129,7 +130,14 @@ class EvaluateRequest(BaseModel):
     expected_answer: str
 
 
-app = FastAPI(title="DeepResearch Environment API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if not os.getenv("EXA_API_KEY"):
+        raise ValueError("EXA_API_KEY is not set")
+    yield
+
+
+app = FastAPI(title="DeepResearch Environment API", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -368,9 +376,6 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-
-    if not os.getenv("EXA_API_KEY"):
-        raise ValueError("EXA_API_KEY is not set")
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
