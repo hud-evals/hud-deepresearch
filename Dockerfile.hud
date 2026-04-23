@@ -1,9 +1,5 @@
 FROM python:3.11-slim
 
-# Validate required build arguments early (fail fast)
-ARG EXA_API_KEY
-RUN test -n "$EXA_API_KEY" || (echo "ERROR: EXA_API_KEY build arg is required" && exit 1)
-
 WORKDIR /app
 
 # Install git for dependency installation
@@ -21,7 +17,6 @@ COPY tests/ ./tests/
 
 ENV ENV_SERVER_URL=http://localhost:8000
 ENV PYTHONPATH=/app
-ENV EXA_API_KEY=$EXA_API_KEY
 
 # Start backend in background, then run environment with stdio
 CMD ["sh", "-c", "uvicorn backend.server:app --host 0.0.0.0 --port 8000 --log-level warning >&2 & sleep 0.5 && exec hud dev env:env --stdio"]

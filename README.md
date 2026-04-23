@@ -12,7 +12,7 @@ hud set HUD_API_KEY=your-key-here   # CLI auth, get one at hud.ai/project/api-ke
 ## Deploy & Run
 
 ```bash
-hud deploy . --build-arg EXA_API_KEY=$EXA_API_KEY   # deploy the environment (once)
+hud deploy .                                        # deploy the environment (once)
 hud sync tasks <taskset-name>                        # push tasks to a taskset (fast, re-run on every task change)
 hud eval <taskset-name> --remote --full
 ```
@@ -31,7 +31,7 @@ See [Deploy & Go Remote](https://docs.hud.ai/building/running-at-scale) for depl
 
 ## Configuration
 
-Requires `EXA_API_KEY` as a build argument for Exa web search and content extraction.
+Requires `EXA_API_KEY` as a runtime environment variable for Exa web search and content extraction.
 
 ## Documentation
 
