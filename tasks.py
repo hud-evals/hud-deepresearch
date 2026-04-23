@@ -76,7 +76,7 @@ multihop_marconi_advisor.slug = "multihop-marconi-advisor"
 
 # Medium: three-step chain, with disambiguation
 multihop_voyager_crs = multi_hop_research.task(
-    question="Which institution built the Cosmic Ray Subsystem instrument aboard Voyager 1, who was the first principal investigator of that instrument at launch, and at which university did that person earn their PhD?",
+    question="Which institution built the Cosmic Ray Subsystem instrument aboard Voyager 1, who was the principal investigator of that instrument at launch in 1977, and at which university did that person earn their PhD?",
     answer_parts=[
         ["Caltech", "California Institute of Technology", 
         "Goddard Space Flight Center", "GSFC"],
