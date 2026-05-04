@@ -51,7 +51,7 @@ verify_eiffel_paris.slug = "verify-eiffel-paris"
 
 # Medium: subtle factual error (Python was 1991, not 1995)
 verify_python_1995 = verify_claim.task(
-    claim="Python was created by Guido van Rossum in 1995.",
+    claim="Python was first released in 1995.",
     expected_verdict="false",
 )
 verify_python_1995.slug = "verify-python-1995"
