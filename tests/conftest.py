@@ -1,19 +1,15 @@
-"""Test fixtures for deepresearch API tests."""
+"""Test fixtures for deepresearch tests."""
 
 import os
 import sys
 from pathlib import Path
 
 import pytest
-from dotenv import load_dotenv
-from fastapi.testclient import TestClient
 
-# Add project root to sys.path so `backend.server` resolves.
+# Add project root to sys.path so `env` resolves.
 PROJECT_ROOT = str(Path(__file__).parent.parent)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-
-load_dotenv()
 
 
 def pytest_configure(config):
@@ -24,11 +20,11 @@ def pytest_configure(config):
         )
 
 
-@pytest.fixture
-def client():
-    """TestClient for the DeepResearch FastAPI app, reset to fresh state each test."""
-    from backend.server import app
+@pytest.fixture(autouse=True)
+def reset_state():
+    """Reset env.state before each test so counts/answers don't bleed across."""
+    from env import state
 
-    c = TestClient(app)
-    c.post("/setup")
-    return c
+    state.reset()
+    yield
+    state.reset()

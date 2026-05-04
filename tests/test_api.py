@@ -1,93 +1,105 @@
-"""Behavior-focused tests for DeepResearch FastAPI backend."""
+"""Tests for the deepresearch env: Exa helpers, tools, and scenarios."""
+
+import pytest
+
+from env import (
+    _exa_fetch,
+    _exa_search,
+    answer,
+    fetch,
+    research,
+    search,
+    state,
+)
+
+pytestmark = pytest.mark.asyncio
 
 
-class TestHealth:
-    def test_health_returns_healthy(self, client):
-        resp = client.get("/health")
-        assert resp.status_code == 200
-        assert resp.json() == {"status": "healthy"}
-
-
-class TestStateManagement:
-    def test_setup_resets_state(self, client):
-        # Do some operations first
-        client.post("/search", json={"query": "python programming"})
-        client.post("/answer", json={"final_answer": "test"})
-
-        # Reset
-        client.post("/setup")
-
-        # Verify state is cleared
-        state = client.get("/state").json()
-        assert state["search_count"] == 0
-        assert state["fetch_count"] == 0
-        assert state["submitted_answer"] is None
-
-    def test_state_tracks_counts(self, client):
-        # Initial state
-        state = client.get("/state").json()
-        assert state["search_count"] == 0
-        assert state["fetch_count"] == 0
-
-        # Search increments count
-        client.post("/search", json={"query": "python programming"})
-        state = client.get("/state").json()
-        assert state["search_count"] == 1
-
-        # Fetch increments count
-        client.post("/fetch", json={"url": "https://example.com"})
-        state = client.get("/state").json()
-        assert state["fetch_count"] == 1
-
-
-class TestSearch:
-    def test_search_returns_results_with_title_and_url(self, client):
-        resp = client.post("/search", json={"query": "python programming language"})
-        assert resp.status_code == 200
-        results = resp.json()
+class TestExaSearch:
+    async def test_returns_results_with_title_and_url(self):
+        results = await _exa_search("python programming language")
         assert isinstance(results, list)
-        assert len(results) > 0
-        # Either a result with title/url, or a "no results" message
+        assert results
         first = results[0]
-        assert "title" in first or "message" in first
+        # Either a real result with title+url, or the "no results" sentinel
+        assert ("title" in first and "url" in first) or "message" in first
 
 
-class TestFetch:
-    def test_fetch_returns_content(self, client):
-        resp = client.post("/fetch", json={"url": "https://example.com"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "content" in data
-        assert isinstance(data["content"], str)
+class TestExaFetch:
+    async def test_returns_content_for_valid_url(self):
+        content = await _exa_fetch("https://example.com")
+        assert isinstance(content, str)
+        assert content  # non-empty
 
-    def test_fetch_invalid_url_returns_400(self, client):
-        resp = client.post("/fetch", json={"url": "not-a-valid-url"})
-        assert resp.status_code == 400
+    async def test_invalid_url_raises(self):
+        with pytest.raises(ValueError):
+            await _exa_fetch("not-a-valid-url")
 
 
-class TestAnswer:
-    def test_answer_stores_and_evaluate_correct(self, client):
-        # Submit answer
-        client.post("/answer", json={"final_answer": "The answer is Paris"})
+class TestState:
+    async def test_search_increments_count(self):
+        assert state.search_count == 0
+        await search("python")
+        assert state.search_count == 1
 
-        # Verify stored
-        state = client.get("/state").json()
-        assert state["submitted_answer"] == "The answer is Paris"
+    async def test_fetch_increments_count(self):
+        assert state.fetch_count == 0
+        await fetch("https://example.com")
+        assert state.fetch_count == 1
 
-        # Evaluate with matching expected (case-insensitive substring)
-        resp = client.post("/evaluate", json={"expected_answer": "paris"})
-        data = resp.json()
-        assert data["reward"] == 1.0
-        assert data["done"] is True
+    async def test_answer_stores_submission(self):
+        assert state.submitted_answer is None
+        await answer("The answer is Paris")
+        assert state.submitted_answer == "The answer is Paris"
 
-    def test_evaluate_incorrect_returns_zero(self, client):
-        client.post("/answer", json={"final_answer": "London"})
-        resp = client.post("/evaluate", json={"expected_answer": "paris"})
-        assert resp.json()["reward"] == 0.0
+    async def test_reset_clears_everything(self):
+        state.search_count = 3
+        state.fetch_count = 5
+        state.submitted_answer = "x"
+        state.reset()
+        assert state.search_count == 0
+        assert state.fetch_count == 0
+        assert state.submitted_answer is None
 
-    def test_evaluate_no_submission_returns_zero(self, client):
-        # Don't submit any answer, just evaluate
-        resp = client.post("/evaluate", json={"expected_answer": "paris"})
-        data = resp.json()
-        assert data["reward"] == 0.0
-        assert data["done"] is False
+
+class TestResearchScenario:
+    """Drive the research scenario as an async generator (no Exa calls)."""
+
+    async def test_correct_answer_via_tool_scores_1(self):
+        gen = research(question="Q", answer_includes="Paris")
+        prompt = await gen.asend(None)
+        assert "Q" in prompt
+
+        # Simulate the agent calling answer(...)
+        await answer("The answer is Paris")
+        reward = await gen.asend(None)
+        assert reward == 1.0
+
+    async def test_correct_answer_via_response_fallback(self):
+        gen = research(question="Q", answer_includes="Paris")
+        await gen.asend(None)
+        # No answer tool call — agent's response is used as fallback
+        reward = await gen.asend("The capital of France is Paris")
+        assert reward == 1.0
+
+    async def test_incorrect_answer_scores_0(self):
+        gen = research(question="Q", answer_includes="Paris")
+        await gen.asend(None)
+        await answer("The answer is London")
+        reward = await gen.asend(None)
+        assert reward == 0.0
+
+    async def test_no_answer_scores_0(self):
+        gen = research(question="Q", answer_includes="Paris")
+        await gen.asend(None)
+        reward = await gen.asend(None)
+        assert reward == 0.0
+
+    async def test_list_of_acceptable_answers(self):
+        gen = research(
+            question="Q", answer_includes=["Radcliffe College", "Radcliffe"]
+        )
+        await gen.asend(None)
+        await answer("It was Radcliffe.")
+        reward = await gen.asend(None)
+        assert reward == 1.0
