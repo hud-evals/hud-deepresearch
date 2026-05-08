@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import httpx
 from dotenv import load_dotenv
 from hud import Environment
+from hud.tools.submit import SubmitTool, get_submission, set_submission
 
 load_dotenv()
 
@@ -43,16 +44,15 @@ T = TypeVar("T")
 
 @dataclass
 class _EnvState:
-    """Tracks tool usage and the agent's submitted answer for one scenario run."""
+    """Tracks tool usage for one scenario run."""
 
     search_count: int = 0
     fetch_count: int = 0
-    submitted_answer: str | None = None
 
     def reset(self) -> None:
         self.search_count = 0
         self.fetch_count = 0
-        self.submitted_answer = None
+        set_submission(None)
 
 
 state = _EnvState()
@@ -222,11 +222,10 @@ async def fetch(url: str) -> str:
     return content
 
 
-@env.tool()
-async def answer(final_answer: str) -> str:
-    """Submit your final answer. Call this when you have completed your research."""
-    state.submitted_answer = final_answer
-    return f"Answer submitted: {final_answer}"
+env.add_tool(SubmitTool(
+    name="answer",
+    description="Submit your final answer. Call this when you have completed your research.",
+))
 
 
 @env.tool()
@@ -270,7 +269,7 @@ Return just the answer, no other text."""
 
     response = yield prompt
 
-    submitted = state.submitted_answer or response or ""
+    submitted = get_submission() or response or ""
     if not submitted:
         logger.info("No answer submitted and no response from agent")
         yield 0.0
@@ -311,7 +310,7 @@ Your answer should be one of: "true", "false", or "partially true" followed by a
 
     response = yield prompt
 
-    submitted = state.submitted_answer or response or ""
+    submitted = get_submission() or response or ""
     if not submitted:
         logger.info("No answer submitted and no response from agent")
         yield 0.0
@@ -356,7 +355,7 @@ Include ALL parts of the answer."""
 
     response = yield prompt
 
-    submitted = state.submitted_answer or response or ""
+    submitted = get_submission() or response or ""
     if not submitted:
         yield 0.0
         return

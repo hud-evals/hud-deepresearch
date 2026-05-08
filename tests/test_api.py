@@ -5,12 +5,12 @@ import pytest
 from env import (
     _exa_fetch,
     _exa_search,
-    answer,
     fetch,
     research,
     search,
     state,
 )
+from hud.tools.submit import get_submission, set_submission
 
 pytestmark = pytest.mark.asyncio
 
@@ -48,18 +48,18 @@ class TestState:
         assert state.fetch_count == 1
 
     async def test_answer_stores_submission(self):
-        assert state.submitted_answer is None
-        await answer("The answer is Paris")
-        assert state.submitted_answer == "The answer is Paris"
+        assert get_submission() is None
+        set_submission("The answer is Paris")
+        assert get_submission() == "The answer is Paris"
 
     async def test_reset_clears_everything(self):
         state.search_count = 3
         state.fetch_count = 5
-        state.submitted_answer = "x"
+        set_submission("x")
         state.reset()
         assert state.search_count == 0
         assert state.fetch_count == 0
-        assert state.submitted_answer is None
+        assert get_submission() is None
 
 
 class TestResearchScenario:
@@ -71,7 +71,7 @@ class TestResearchScenario:
         assert "Q" in prompt
 
         # Simulate the agent calling answer(...)
-        await answer("The answer is Paris")
+        set_submission("The answer is Paris")
         reward = await gen.asend(None)
         assert reward == 1.0
 
@@ -85,7 +85,7 @@ class TestResearchScenario:
     async def test_incorrect_answer_scores_0(self):
         gen = research(question="Q", answer_includes="Paris")
         await gen.asend(None)
-        await answer("The answer is London")
+        set_submission("The answer is London")
         reward = await gen.asend(None)
         assert reward == 0.0
 
@@ -100,6 +100,6 @@ class TestResearchScenario:
             question="Q", answer_includes=["Radcliffe College", "Radcliffe"]
         )
         await gen.asend(None)
-        await answer("It was Radcliffe.")
+        set_submission("It was Radcliffe.")
         reward = await gen.asend(None)
         assert reward == 1.0
