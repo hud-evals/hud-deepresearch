@@ -1,13 +1,14 @@
-wandb/
-outputs/
-checkpoints/
-src/hud_controller/.env
-
 .venv/
+__pycache__/
+.pytest_cache/
+
+# Secrets and local-only config (never commit)
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.hud_eval.toml
 
-__pycache__/
+# Account-specific deploy link (registryId)
+.hud/

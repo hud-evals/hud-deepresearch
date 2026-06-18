@@ -1,106 +1,53 @@
-"""Task definitions for the deepresearch environment.
+"""Shipped taskset for the deepresearch environment.
 
-Each task is created via scenario.task() and can be run locally or remotely:
+Two live-research tasks graded by an LLM judge. See README.md for extension prompts
+(multi-hop, citation audits, contradictory sources, company research, ...).
 
-    python local_test.py --list
-    python local_test.py --task research_ieee_2010
-    python local_test.py --task multihop_marconi_advisor --model gpt-4o
+    hud eval tasks.py claude --task-ids research-jay-ram -y --runtime local
 """
 
-from env import (
-    multi_hop_research,
-    research,
-    verify_claim,
+from env import env, research_person, web_research  # noqa: F401  (re-export env for `hud eval tasks.py`)
+
+# Live web research (Exa). Needs EXA_API_KEY.
+_web_research_rust = web_research(
+    question="What year did the Rust programming language reach its 1.0 stable release?",
+    answer_should_include="2015",
 )
+_web_research_rust.slug = "web-research-rust-1-0"
 
-# =============================================================================
-# RESEARCH (binary: 1.0 if answer contains expected string, 0.0 otherwise)
-# =============================================================================
-
-# Easy: unique factual answer, single keyword
-research_ieee_2010 = research.task(
-    question="Who received the IEEE Frank Rosenblatt Award in 2010?",
-    answer_includes="Michio Sugeno",
+# Deep research on a person via Sixtyfour (sponsor). Needs SIXTYFOUR_API_KEY.
+# Disambiguation matters: several people are named "Jay Ram"; the brief names the
+# company (HUD) so the agent enriches the right one. Graded against verified public
+# facts, with partial credit per dossier requirement.
+_research_jay = research_person(
+    brief=(
+        "I've got a call with Jay Ram, co-founder of HUD (the YC W25 startup), next week and "
+        "want to walk in prepared. Put together a short, sourced dossier on him: his exact role, "
+        "what HUD does, who he founded it with, his background and education, and where he worked "
+        "before. Back each point with a source, then give me the writeup."
+    ),
+    criteria=[
+        "Identifies HUD and describes it as a platform for building RL (reinforcement-learning) "
+        "environments and agent evaluations.",
+        "States Jay Ram's role as founder/CEO of HUD.",
+        "Names at least one of his HUD co-founders (Lorenss Martinsons or Parth Patel).",
+        "Notes his education at Columbia University (computer science / physics).",
+        "Names at least one of his real prior roles or companies. Any of these all count and are "
+        "all true: Hume AI, AQR Capital, Chai Research, Quantedge, Standard Metrics, quantitative "
+        "finance, or ML/interpretability research. Do not penalize which subset the dossier picks.",
+        "Backs the dossier with source links rather than unsourced assertions.",
+        "Profiles the correct Jay Ram - the HUD/YC founder - not a different person of the same name.",
+    ],
+    ground_truth=(
+        "Jay Ram is founder and CEO of HUD (YC W25), a platform for building RL environments and "
+        "agent evaluations. HUD co-founders: Lorenss Martinsons (CPO) and Parth Patel (CTO). "
+        "Education: Columbia University (computer science and physics). His prior experience is "
+        "varied and ALL of the following are true (different sources surface different subsets; "
+        "none contradict each other): Hume AI, AQR Capital Management, Chai Research, Quantedge, "
+        "Standard Metrics, quantitative finance, and ML / LLM-interpretability research. Credit "
+        "any of these as a correct prior role."
+    ),
 )
-research_ieee_2010.slug = "research-ieee-2010"
+_research_jay.slug = "research-jay-ram"
 
-# Medium: niche academic domain
-research_jerlov_2018 = research.task(
-    question="Who was awarded the Oceanography Society's Jerlov Award in 2018?",
-    answer_includes="Annick Bricaud",
-)
-research_jerlov_2018.slug = "research-jerlov-2018"
-
-# Hard: multiple acceptable answer forms, needs disambiguation
-research_cambridge_college = research.task(
-    question="What's the name of the former women's liberal arts college in Cambridge, Massachusetts founded in 1879?",
-    answer_includes=["Radcliffe College", "Radcliffe"],
-)
-research_cambridge_college.slug = "research-cambridge-college"
-
-# =============================================================================
-# VERIFY-CLAIM (binary: 1.0 if verdict matches, 0.0 otherwise)
-# =============================================================================
-
-# Easy: obviously true, widely known fact
-verify_eiffel_paris = verify_claim.task(
-    claim="The Eiffel Tower is located in Paris, France.",
-    expected_verdict="true",
-)
-verify_eiffel_paris.slug = "verify-eiffel-paris"
-
-# Medium: subtle factual error (Python was 1991, not 1995)
-verify_python_1995 = verify_claim.task(
-    claim="Python was first released in 1995.",
-    expected_verdict="false",
-)
-verify_python_1995.slug = "verify-python-1995"
-
-# Hard: requires nuanced research about history of geodetic surveys
-verify_everest_tallest = verify_claim.task(
-    claim="Mount Everest was immediately recognized as the tallest mountain on Earth when its height was first measured.",
-    expected_verdict="false",
-)
-verify_everest_tallest.slug = "verify-everest-tallest"
-
-# =============================================================================
-# MULTI-HOP-RESEARCH (partial credit: fraction of answer_parts found)
-# =============================================================================
-
-# Medium: two-hop — find a niche award winner, then find a detail about them
-multihop_marconi_advisor = multi_hop_research.task(
-    question="Who won the Marconi Prize in 2023, and who was their doctoral advisor?",
-    answer_parts=["Hari Balakrishnan", "Randy Katz"],
-)
-multihop_marconi_advisor.slug = "multihop-marconi-advisor"
-
-# Medium: three-step chain, with disambiguation
-multihop_voyager_crs = multi_hop_research.task(
-    question="Which institution built the Cosmic Ray Subsystem instrument aboard Voyager 1, who was the principal investigator of that instrument at launch in 1977, and at which university did that person earn their PhD?",
-    answer_parts=[
-        ["Caltech", "California Institute of Technology", 
-        "Goddard Space Flight Center", "GSFC"],
-        ["Rochus Vogt", "Rochus E. Vogt", "Rochus Eugen Vogt", 
-        "Robbie Vogt", "R.E. Vogt"],
-        ["University of Chicago", "UChicago", "Chicago"],
-    ]
-)
-multihop_voyager_crs.slug = "multihop-voyager-crs"
-
-# =============================================================================
-# ALL_TASKS: canonical registry for discovery
-# =============================================================================
-
-ALL_TASKS = {
-    # research (binary)
-    "research_ieee_2010": research_ieee_2010,
-    "research_jerlov_2018": research_jerlov_2018,
-    "research_cambridge_college": research_cambridge_college,
-    # verify-claim (binary)
-    "verify_eiffel_paris": verify_eiffel_paris,
-    "verify_python_1995": verify_python_1995,
-    "verify_everest_tallest": verify_everest_tallest,
-    # multi-hop-research (partial credit)
-    "multihop_marconi_advisor": multihop_marconi_advisor,
-    "multihop_voyager_crs": multihop_voyager_crs,
-}
+tasks = [_web_research_rust, _research_jay]

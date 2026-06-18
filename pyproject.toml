@@ -1,12 +1,21 @@
 [project]
 name = "deepresearch"
 version = "0.1.0"
-description = "DeepResearch HUD environment — web research with Exa"
-requires-python = ">=3.11"
+description = "DeepResearch HUD v6 environment: research over sources, graded by an LLM judge"
+# v6 SDK caps at <3.13; pin the upper bound so uv does not pick 3.13 and fail.
+requires-python = ">=3.11,<3.13"
 dependencies = [
-    "hud-python>=0.5.12",
-    "httpx>=0.24.0",
+    # v6 is not on PyPI yet: git-pin the validated v6 commit (hud-python 0.5.41, branch v6).
+    # When v6 ships to PyPI, switch to "hud-python>=<v6-version>" and drop allow-direct-references.
+    "hud-python @ git+https://github.com/hud-evals/hud-python.git@b72a9444310e7bd5a3828cb631b27aaa2817b475",
+    "fastmcp>=3,<4",
+    "httpx>=0.23.0,<1",
     "python-dotenv>=1.0.0",
+]
+
+# Test-only tools: installed by `uv sync` for local dev, kept out of the deployed image.
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
@@ -19,8 +28,12 @@ build-backend = "hatchling.build"
 image = "deepresearch:dev"
 
 [tool.hatch.metadata]
+# hatchling rejects git/URL deps without this.
 allow-direct-references = true
 
 [tool.hatch.build]
 only-packages = false
 include = ["env.py", "tasks.py"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

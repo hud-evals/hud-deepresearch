@@ -1,396 +1,270 @@
-"""Deep Research Environment — Web research with Exa search and content fetching.
+"""DeepResearch v6 environment: live research tools over an `mcp` capability, LLM-judged.
 
-Tools (search/fetch/answer) call the Exa API directly. Per-scenario state lives
-in a module-level instance, reset at the top of each scenario.
+Tools: search/fetch (live web via Exa) and Sixtyfour enrich_person/enrich_company.
+Templates: web_research (a cited web answer) and research_person (a sourced dossier).
 """
 
+# NOTE: do NOT add `from __future__ import annotations` here. Under it, a
+# `@env.template` param annotated with Literal/alias/model crashes the
+# sync/deploy manifest path (TypeAdapter on a string forward-ref). Keep
+# annotations as real objects.
 import asyncio
+import contextlib
 import logging
 import os
-import subprocess
+import socket
 import sys
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from dataclasses import dataclass
-from typing import Any, TypeVar
-from urllib.parse import urlparse
+import time
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+
 from hud import Environment
-from hud.tools.submit import SubmitTool, get_submission, set_submission
+from hud.capabilities import Capability
+from hud.graders import LLMJudgeGrader, combine
 
 load_dotenv()
 
-logging.basicConfig(
-    stream=sys.stderr,
-    level=logging.INFO,
-    format="[%(levelname)s] %(asctime)s | %(name)s | %(message)s",
-    force=True,
-)
-for logger_name in ["httpx", "httpcore"]:
-    logging.getLogger(logger_name).setLevel(logging.WARNING)
-
-logger = logging.getLogger(__name__)
+logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="[%(levelname)s] %(name)s | %(message)s")
+for noisy in ("httpx", "httpcore", "FastMCP", "mcp"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+logger = logging.getLogger("deepresearch")
 
 env = Environment(name="deepresearch")
 
-T = TypeVar("T")
+_MCP_PORT: int | None = None
+_MCP_SERVER_TASK: asyncio.Task[None] | None = None
 
 
-# =============================================================================
-# STATE
-# =============================================================================
+# ── web search (Exa) ──────────────────────────────────────────────────────────
 
 
-@dataclass
-class _EnvState:
-    """Tracks tool usage for one scenario run."""
-
-    search_count: int = 0
-    fetch_count: int = 0
-
-    def reset(self) -> None:
-        self.search_count = 0
-        self.fetch_count = 0
-        set_submission(None)
-
-
-state = _EnvState()
-
-
-# =============================================================================
-# EXA API HELPERS
-# =============================================================================
-
-
-async def _call_with_backoff(
-    func: Callable[..., Awaitable[T]],
-    *args: Any,
-    max_retries: int = 4,
-    initial_delay: float = 2.0,
-    max_delay: float = 55.0,
-    exponential_base: float = 2.0,
-    **kwargs: Any,
-) -> T:
-    """Call an async function with exponential backoff on 429s and timeouts."""
-    delay = initial_delay
-    last: Exception | None = None
-
-    for attempt in range(max_retries + 1):
-        try:
-            return await func(*args, **kwargs)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code != 429 or attempt >= max_retries:
-                raise
-            last = e
-            logger.warning(
-                "Rate limit (429), retrying in %ss (attempt %d/%d)",
-                delay, attempt + 1, max_retries,
-            )
-        except (httpx.TimeoutException, httpx.ReadTimeout) as e:
-            if attempt >= max_retries:
-                raise
-            last = e
-            logger.warning(
-                "Timeout, retrying in %ss (attempt %d/%d)",
-                delay, attempt + 1, max_retries,
-            )
-
-        await asyncio.sleep(delay)
-        delay = min(delay * exponential_base, max_delay)
-
-    if last:
-        raise last
-    raise RuntimeError("unreachable")
-
-
-def _require_api_key() -> str:
+async def _exa_search(query: str, k: int = 5) -> list[dict[str, str]]:
     key = os.getenv("EXA_API_KEY")
     if not key:
-        raise RuntimeError("EXA_API_KEY is not set")
-    return key
+        return [{"message": "Live web search is not configured. Set EXA_API_KEY.", "query": query}]
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(
+            "https://api.exa.ai/search",
+            headers={"x-api-key": key, "Content-Type": "application/json"},
+            json={"query": query, "numResults": k, "contents": {"text": {"maxCharacters": 800}}},
+        )
+        r.raise_for_status()
+        data = r.json()
+    out = [
+        {"title": it.get("title", ""), "url": it.get("url", ""), "snippet": (it.get("text") or "")[:200]}
+        for it in data.get("results", [])
+        if it.get("url")
+    ]
+    return out or [{"message": "No results found", "query": query}]
 
 
-async def _exa_search(query: str, max_results: int = 1) -> list[dict[str, str]]:
-    """Call Exa's search API. Returns a list of {title, url} dicts.
-
-    Returns a [{"message": ..., "query": ..., "autopromptString": ...}] sentinel
-    when Exa finds no results.
-    """
-    api_key = _require_api_key()
-
-    async def _do() -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            r = await client.post(
-                "https://api.exa.ai/search",
-                headers={"x-api-key": api_key, "Content-Type": "application/json"},
-                json={
-                    "query": query,
-                    "numResults": max_results,
-                    "type": "keyword",
-                    "userLocation": "us",
-                    "contents": {"text": {"maxCharacters": 1000}},
-                },
-            )
-            r.raise_for_status()
-            return r.json()
-
-    data = await _call_with_backoff(_do)
-    results: list[dict[str, str]] = []
-    for item in data.get("results", []):
-        title, url = item.get("title", ""), item.get("url", "")
-        if title and url:
-            results.append({"title": title, "url": url})
-
-    if not results:
-        return [{
-            "message": "No results found",
-            "query": query,
-            "autopromptString": data.get("autopromptString", query),
-        }]
-    return results
-
-
-async def _exa_fetch(url: str, max_length: int = 2500) -> str:
-    """Call Exa's contents API. Returns formatted summary + highlights + text."""
-    parsed = urlparse(url)
-    if not parsed.scheme or not parsed.netloc:
-        raise ValueError(f"Invalid URL: {url}")
-
-    api_key = _require_api_key()
-
-    async def _do() -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            r = await client.post(
-                "https://api.exa.ai/contents",
-                headers={"x-api-key": api_key, "Content-Type": "application/json"},
-                json={
-                    "urls": [url],
-                    "text": {"maxCharacters": max_length, "includeHtmlTags": False},
-                    "highlights": {"numSentences": 5, "highlightsPerUrl": 3},
-                    "summary": {"query": "main takeaways"},
-                    "livecrawl": "fallback",
-                },
-            )
-            r.raise_for_status()
-            return r.json()
-
-    data = await _call_with_backoff(_do)
+async def _exa_fetch(url: str, max_chars: int = 2500) -> str:
+    key = os.getenv("EXA_API_KEY")
+    if not key:
+        return "Live fetch is not configured. Set EXA_API_KEY."
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(
+            "https://api.exa.ai/contents",
+            headers={"x-api-key": key, "Content-Type": "application/json"},
+            json={"urls": [url], "text": {"maxCharacters": max_chars}},
+        )
+        r.raise_for_status()
+        data = r.json()
     results = data.get("results", [])
     if not results:
         return "No content available for this URL"
-
-    result = results[0]
-    summary = result.get("summary", "")
-    highlights = result.get("highlights", [])
-    text = result.get("text", "")
-    if text and len(text) > max_length:
-        text = text[:max_length] + "...[truncated]"
-
-    parts: list[str] = []
-    if summary:
-        parts.extend(["=== SUMMARY (Main Takeaways) ===", summary, ""])
-    if highlights:
-        parts.append("=== KEY HIGHLIGHTS ===")
-        for idx, hl in enumerate(highlights[:3], 1):
-            parts.extend([f"\nHighlight {idx}:", str(hl)])
-        parts.append("")
-    if text:
-        parts.extend(["=== FULL CONTENT ===", text])
-
-    return "\n".join(parts) if parts else "No content available"
+    return (results[0].get("text") or "")[:max_chars] or "No content available for this URL"
 
 
-# =============================================================================
-# TOOLS
-# =============================================================================
+# ── tools (registered on the mcp server at serve time) ────────────────────────
 
 
-@env.tool()
 async def search(query: str) -> list[dict[str, str]]:
-    """Search the web using Exa. Returns a list of results with title and URL."""
-    results = await _exa_search(query)
-    state.search_count += 1
-    return results
+    """Search the web for a query. Returns a list of {title, url, snippet}."""
+    return await _exa_search(query)
 
 
-@env.tool()
 async def fetch(url: str) -> str:
-    """Fetch and extract content from a URL. Returns summary, highlights, and text."""
-    content = await _exa_fetch(url)
-    state.fetch_count += 1
-    return content
+    """Fetch the full text of a web page by its URL (from a prior search result)."""
+    return await _exa_fetch(url)
 
 
-env.add_tool(SubmitTool(
-    name="answer",
-    description="Submit your final answer. Call this when you have completed your research.",
-))
+# ── Sixtyfour: deep research on people and companies ──────────────────────────
+# Agentic enrichment API (sponsor: sixtyfour.ai). Sync calls take minutes, so the
+# tools force the fast `micro` tier and use a long client timeout.
+
+_SIXTYFOUR_BASE = "https://api.sixtyfour.ai"
 
 
-@env.tool()
-async def hud_validate() -> str:
-    """Run the test suite to validate the environment is working correctly."""
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
-        capture_output=True,
-        text=True,
-        cwd="/app",
-    )
-    output = result.stdout + result.stderr
-    if result.returncode != 0:
-        raise RuntimeError(output or f"pytest exited with code {result.returncode}")
-    return output
+async def _sixtyfour_post(path: str, payload: dict[str, Any], timeout: float = 900.0) -> dict[str, Any]:
+    key = os.getenv("SIXTYFOUR_API_KEY")
+    if not key:
+        return {"error": "Sixtyfour is not configured. Set SIXTYFOUR_API_KEY to enable deep "
+                         "person/company research."}
+    headers = {"x-api-key": key, "Content-Type": "application/json"}
+    t0 = time.monotonic()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(f"{_SIXTYFOUR_BASE}{path}", headers=headers, json=payload)
+        if r.status_code >= 500:  # one retry on a transient server error
+            r = await client.post(f"{_SIXTYFOUR_BASE}{path}", headers=headers, json=payload)
+        logger.info("sixtyfour %s -> %s in %.0fs", path, r.status_code, time.monotonic() - t0)
+        if r.status_code >= 400:
+            # Return a usable error instead of raising, so the agent can adapt and the
+            # rollout doesn't crash on a Sixtyfour-side hiccup.
+            try:
+                detail = r.json().get("detail")
+            except Exception:
+                detail = r.text[:300]
+            return {"error": f"Sixtyfour returned {r.status_code}", "detail": detail}
+        return r.json()
 
 
-# =============================================================================
-# SCENARIOS
-# =============================================================================
+async def enrich_person(name: str, company: str = "", linkedin: str = "") -> dict[str, Any]:
+    """Deep-research a person and return a sourced dossier in one call.
 
-
-@env.scenario("research", exclude_tools=["hud_validate"])
-async def research(
-    question: str, answer_includes: str | list[str] | None = None
-) -> AsyncGenerator[Any]:
-    """Research a question and find the answer.
-
-    Args:
-        question: The research question to answer
-        answer_includes: String or list of strings that must appear in the answer
+    Pass ``company`` and/or ``linkedin`` to disambiguate common names. Returns
+    ``structured_data`` (role, company, co-founders, prior companies, sources) plus a
+    ``notes`` narrative and ``references``. This is the primary tool for a person dossier.
     """
-    state.reset()
-    logger.info("Research scenario: %s", question)
+    lead_info: dict[str, str] = {"name": name}
+    if company:
+        lead_info["company"] = company
+    if linkedin:
+        lead_info["linkedin"] = linkedin
+    # Keep the struct lean: large structs 500 on Sixtyfour. The response also carries a
+    # rich `notes` narrative + `references`, which cover the rest of the dossier.
+    struct = {
+        "current_role": "Current job title and company",
+        "company_description": "What their current company does, in one sentence",
+        "cofounders": "Names of their co-founders, if any",
+        "prior_companies": "Notable companies or roles before the current one",
+        "sources": "List of source URLs the research is based on",
+    }
+    # tier="micro" keeps the call fast enough for an interactive rollout (low+ can take
+    # 5-10 min); the agent can't pick a slower tier.
+    return await _sixtyfour_post("/enrich-lead", {"lead_info": lead_info, "struct": struct, "tier": "micro"})
 
-    prompt = f"""{question}
 
-Use the search and fetch tools to find the answer. When you have found the answer, call the answer tool with your final response.
-
-Return just the answer, no other text."""
-
-    response = yield prompt
-
-    submitted = get_submission() or response or ""
-    if not submitted:
-        logger.info("No answer submitted and no response from agent")
-        yield 0.0
-        return
-
-    submitted_lower = submitted.strip().lower()
-    candidates = [answer_includes] if isinstance(answer_includes, str) else (answer_includes or [])
-    found = any(c.lower() in submitted_lower for c in candidates)
-    reward = 1.0 if found else 0.0
-
-    logger.info(
-        "Research result: found=%s, candidates=%s, reward=%.2f, answer='%s'",
-        found, candidates, reward, submitted[:100],
+async def enrich_company(company: str, website: str = "") -> dict[str, Any]:
+    """Deep-research a company via Sixtyfour. Returns ``structured_data`` + ``confidence_score``."""
+    target = f"{company} ({website})" if website else company
+    struct = {
+        "what_they_do": "One-sentence description of the company",
+        "founded_year": "Year the company was founded",
+        "headcount": "Approximate number of employees",
+        "founders": "Names of the founders",
+        "funding": "Funding stage and notable investors, if known",
+        "sources": "List of source URLs the research is based on",
+    }
+    return await _sixtyfour_post(
+        "/company-intelligence", {"target_company": target, "struct": struct, "tier": "micro"}
     )
-    yield reward
 
 
-@env.scenario("verify-claim", exclude_tools=["hud_validate"])
-async def verify_claim(
-    claim: str, expected_verdict: str | None = None
-) -> AsyncGenerator[Any]:
-    """Verify whether a claim is true or false.
-
-    Args:
-        claim: The claim to verify
-        expected_verdict: Expected verdict ("true", "false", "partially true", etc.)
-    """
-    state.reset()
-    logger.info("Verify claim scenario: %s", claim)
-
-    prompt = f"""Verify the following claim:
-
-"{claim}"
-
-Use the search and fetch tools to find evidence. When you have determined whether the claim is true or false, call the answer tool with your verdict.
-
-Your answer should be one of: "true", "false", or "partially true" followed by a brief explanation."""
-
-    response = yield prompt
-
-    submitted = get_submission() or response or ""
-    if not submitted:
-        logger.info("No answer submitted and no response from agent")
-        yield 0.0
-        return
-
-    if expected_verdict is None:
-        logger.info("No expected verdict provided, defaulting to 0.0 reward")
-        yield 0.0
-        return
-
-    is_correct = expected_verdict.strip().lower() in submitted.strip().lower()
-    reward = 1.0 if is_correct else 0.0
-
-    logger.info(
-        "Verify claim result: expected='%s', got='%s', reward=%.2f",
-        expected_verdict, submitted[:100], reward,
-    )
-    yield reward
+# ── mcp capability lifecycle ──────────────────────────────────────────────────
 
 
-@env.scenario("multi-hop-research")
-async def multi_hop_research(
-    question: str,
-    answer_parts: list[str | list[str]] | None = None,
-) -> AsyncGenerator[Any]:
-    """Answer a question requiring chaining multiple research steps.
-
-    Partial credit is awarded for each correct part found.
-
-    Args:
-        question: A multi-part question requiring chained research
-        answer_parts: Each element is either a string or a list of acceptable alternatives.
-    """
-    state.reset()
-    logger.info("Multi-hop research scenario: %s", question)
-
-    prompt = f"""{question}
-
-This question requires multiple steps of research. Break it down, search for each piece of information, and combine your findings. Call the answer tool when you have the complete answer.
-
-Include ALL parts of the answer."""
-
-    response = yield prompt
-
-    submitted = get_submission() or response or ""
-    if not submitted:
-        yield 0.0
-        return
-
-    if not answer_parts:
-        yield 1.0
-        return
-
-    submitted_lower = submitted.strip().lower()
-
-    def _part_found(part: str | list[str]) -> bool:
-        candidates = [part] if isinstance(part, str) else part
-        return any(c.lower() in submitted_lower for c in candidates)
-
-    found_count = sum(1 for p in answer_parts if _part_found(p))
-    reward = found_count / len(answer_parts)
-
-    logger.info(
-        "Multi-hop result: found %d/%d parts, reward=%.2f, answer='%s'",
-        found_count, len(answer_parts), reward, submitted[:100],
-    )
-    yield round(reward, 4)
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
 
 
-# =============================================================================
-# LIFECYCLE
-# =============================================================================
+async def _listening(host: str, port: int, timeout: float = 15.0) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        try:
+            socket.create_connection((host, port), timeout=0.5).close()
+            return
+        except OSError:
+            await asyncio.sleep(0.1)
+    raise RuntimeError(f"mcp server never came up on {host}:{port}")
 
 
 @env.initialize
-async def init() -> None:
-    """Fail fast if the Exa API key isn't configured."""
-    _require_api_key()
-    logger.info("EXA_API_KEY present; deepresearch env ready")
+async def _up() -> None:
+    # Import FastMCP lazily so `import tasks` (the task-collection path) stays
+    # free of fastmcp/authlib import-time noise.
+    from fastmcp import FastMCP
+
+    global _MCP_PORT, _MCP_SERVER_TASK
+    if _MCP_SERVER_TASK is None:
+        server = FastMCP(name="research-tools")
+        server.tool(search)
+        server.tool(fetch)
+        server.tool(enrich_person)
+        server.tool(enrich_company)
+        _MCP_PORT = _free_port()
+        _MCP_SERVER_TASK = asyncio.create_task(
+            server.run_async(transport="http", host="127.0.0.1", port=_MCP_PORT, show_banner=False)
+        )
+        await _listening("127.0.0.1", _MCP_PORT)
+    env.add_capability(Capability.mcp(name="research", url=f"http://127.0.0.1:{_MCP_PORT}/mcp"))
+    if not os.getenv("EXA_API_KEY"):
+        logger.info("EXA_API_KEY not set; web_research needs it (search/fetch will say so).")
 
 
-if __name__ == "__main__":
-    env.run(transport="stdio")
+@env.shutdown
+async def _down() -> None:
+    global _MCP_SERVER_TASK
+    if _MCP_SERVER_TASK is not None:
+        _MCP_SERVER_TASK.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _MCP_SERVER_TASK
+        _MCP_SERVER_TASK = None
+
+
+# ── tasks ─────────────────────────────────────────────────────────────────────
+
+
+@env.template()
+async def web_research(question: str, answer_should_include: str = "") -> AsyncGenerator[Any, Any]:
+    """Answer a question from live web research (Exa); graded by an LLM judge."""
+    answer = yield (
+        f"{question}\n\nResearch this using web search, then give a direct, specific answer "
+        "and cite the source URL you used."
+    )
+
+    criterion = (
+        f"The answer correctly addresses the question and is consistent with: {answer_should_include}"
+        if answer_should_include
+        else "The answer correctly and specifically addresses the question, with a cited source."
+    )
+    result = await combine(
+        LLMJudgeGrader.grade(
+            weight=1.0, answer=str(answer or ""), criteria=[(criterion, 1.0)], question=question
+        )
+    )
+    logger.info("web_research reward=%.3f", result.reward)
+    yield result
+
+
+@env.template()
+async def research_person(
+    brief: str, criteria: list[str], ground_truth: str = ""
+) -> AsyncGenerator[Any, Any]:
+    """Deep-research a person and produce a sourced dossier; graded by an LLM judge.
+
+    The agent uses enrich_person (Sixtyfour) plus search/fetch to build the dossier.
+
+    Args:
+        brief: The research brief shown to the agent.
+        criteria: Plain-English requirements the dossier must satisfy (one judge
+            criterion each, partial credit).
+        ground_truth: Verified facts handed to the judge so it can grade accurately.
+    """
+    answer = yield brief
+
+    crit = [(c, 1.0) for c in criteria]
+    question = brief + (
+        f"\n\n=== VERIFIED GROUND TRUTH (for grading only) ===\n{ground_truth}" if ground_truth else ""
+    )
+    result = await combine(
+        LLMJudgeGrader.grade(weight=1.0, answer=str(answer or ""), criteria=crit, question=question)
+    )
+    logger.info("research_person reward=%.3f", result.reward)
+    yield result
