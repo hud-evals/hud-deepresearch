@@ -5,8 +5,9 @@ description = "DeepResearch HUD v6 environment: research over sources, graded by
 # v6 SDK caps at <3.13; pin the upper bound so uv does not pick 3.13 and fail.
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    # v6 is not on PyPI yet: git-pin the validated v6 commit (hud-python 0.5.41, branch v6).
-    # When v6 ships to PyPI, switch to "hud-python>=<v6-version>" and drop allow-direct-references.
+    # v6 is not on PyPI yet, so pin the validated v6 commit (hud-python 0.5.41). The commit stays
+    # reachable after v6 merges into main, so this keeps resolving even if the branch goes away.
+    # Once v6 ships to PyPI, switch to "hud-python>=<v6-version>" and drop allow-direct-references.
     "hud-python @ git+https://github.com/hud-evals/hud-python.git@b72a9444310e7bd5a3828cb631b27aaa2817b475",
     "fastmcp>=3,<4",
     "httpx>=0.23.0,<1",
