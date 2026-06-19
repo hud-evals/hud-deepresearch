@@ -1,12 +1,19 @@
 [project]
 name = "deepresearch"
 version = "0.1.0"
-description = "DeepResearch HUD environment — web research with Exa"
-requires-python = ">=3.11"
+description = "DeepResearch HUD v6 environment: research over sources, graded by an LLM judge"
+# v6 SDK caps at <3.13; pin the upper bound so uv does not pick 3.13 and fail.
+requires-python = ">=3.11,<3.13"
 dependencies = [
-    "hud-python>=0.5.12",
-    "httpx>=0.24.0",
+    "hud-python>=0.6.0",
+    "fastmcp>=3,<4",
+    "httpx>=0.23.0,<1",
     "python-dotenv>=1.0.0",
+]
+
+# Test-only tools: installed by `uv sync` for local dev, kept out of the deployed image.
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
@@ -18,9 +25,10 @@ build-backend = "hatchling.build"
 [tool.hud]
 image = "deepresearch:dev"
 
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build]
 only-packages = false
 include = ["env.py", "tasks.py"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
