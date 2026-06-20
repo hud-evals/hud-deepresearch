@@ -5,7 +5,7 @@ description = "DeepResearch HUD v6 environment: research over sources, graded by
 # v6 SDK caps at <3.13; pin the upper bound so uv does not pick 3.13 and fail.
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "hud-python>=0.6.0",
+    "hud-python>=0.6.5",
     "fastmcp>=3,<4",
     "httpx>=0.23.0,<1",
     "python-dotenv>=1.0.0",
